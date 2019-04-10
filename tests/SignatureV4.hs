@@ -31,25 +31,22 @@ import Control.Error.Util
 import Control.Error (initSafe)
 import Control.Exception
 import Control.Monad
-import Control.Monad.Trans.Either
+import Control.Monad.Trans.Except
 import Control.Monad.IO.Class
 
 import qualified Data.Attoparsec.ByteString.Char8 as A8
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
-import qualified Data.CaseInsensitive as CI
 import Data.Function (on)
 import qualified Data.List as L
 import Data.Maybe
 import Data.Monoid
 import Data.String
-import qualified Data.Text.Encoding as T
 import Data.Time.Clock (UTCTime)
 import Data.Tagged
 
 import qualified Network.HTTP.Types as HTTP
 
-import qualified Test.QuickCheck as Q
 import Test.QuickCheck.Instances ()
 
 import qualified Text.Parser.Char as P
@@ -76,9 +73,6 @@ quickCheckTests = testGroup "quick queck tests"
     , testProperty "text roundtrip for CredentialScope"
         (prop_textRoundtrip :: CredentialScope -> Bool)
     ]
-
-instance Q.Arbitrary (CI.CI B.ByteString) where
-    arbitrary = CI.mk . T.encodeUtf8 <$> Q.arbitrary
 
 prop_canonicalHeaders :: HTTP.RequestHeaders -> Bool
 prop_canonicalHeaders h = let x = canonicalHeaders h in x `seq` True
@@ -175,12 +169,12 @@ line = fromString
 testCanonicalRequest
     :: String
     -> TestRequest
-    -> EitherT String IO CanonicalRequest
+    -> ExceptT String IO CanonicalRequest
 testCanonicalRequest name r = do
     creq_ <- liftIO $ readFileNormalized f
     if creq == creq_
     then return result
-    else left $ "test " <> name <> " failed to compute canonical request: "
+    else throwE $ "test " <> name <> " failed to compute canonical request: "
         <> "\n  expected:" <> show creq_
         <> "\n  computed:" <> show creq
   where
@@ -196,12 +190,12 @@ testStringToSign
     :: String
     -> TestRequest
     -> CanonicalRequest
-    -> EitherT String IO StringToSign
+    -> ExceptT String IO StringToSign
 testStringToSign name _req creq = do
     sts_ <- liftIO $ readFileNormalized f
     if sts == sts_
     then return result
-    else left $ "test " <> name <> " failed compute string to sgin: "
+    else throwE $ "test " <> name <> " failed compute string to sgin: "
         <> "\n  expected:" <> show sts_
         <> "\n  computed:" <> show sts
   where
@@ -211,12 +205,12 @@ testStringToSign name _req creq = do
         amz_credentialScope
         creq
 
-testSignature :: String -> TestRequest -> StringToSign -> EitherT String IO Signature
+testSignature :: String -> TestRequest -> StringToSign -> ExceptT String IO Signature
 testSignature name _req str = do
     sig_ <- liftIO $ getSignature <$> readFileNormalized f
     if sig == sig_
     then return result
-    else left $ "test " <> name <> " failed to compute signature: "
+    else throwE $ "test " <> name <> " failed to compute signature: "
         <> "\n  expected:" <> show sig_
         <> "\n  computed:" <> show sig
   where
@@ -225,13 +219,13 @@ testSignature name _req str = do
     result@(Signature sig) = requestSignature key str
     getSignature = snd . B8.spanEnd (/= '=')
 
-testAuthorization :: String -> TestRequest -> Signature -> EitherT String IO B8.ByteString
+testAuthorization :: String -> TestRequest -> Signature -> ExceptT String IO B8.ByteString
 testAuthorization name req sig = do
     authz_ <- liftIO $ readFileNormalized f
     authz <- result
     if authz == authz_
     then return authz
-    else left $ "test " <> name <> " failed to compute authorization info: "
+    else throwE $ "test " <> name <> " failed to compute authorization info: "
         <> "\n  expected:" <> show authz_
         <> "\n  computed:" <> show authz
   where
@@ -253,12 +247,15 @@ testMain name = do
     testRequest <- readFileNormalized reqFile >>= \x -> case A8.parseOnly parseRequest x of
         Left e -> error $ "failed to parse test request file " <> reqFile <> ": " <> e
         Right r -> return r
-    eitherT (\e -> putStrLn e >> return False) (const $ return True) $ do
+    res <- runExceptT $ do
         creq <- testCanonicalRequest name testRequest
         sts <- testStringToSign name testRequest creq
         sig <- testSignature name testRequest sts
         _authz <- testAuthorization name testRequest sig
         return True
+    case res of
+      Left e -> putStrLn e >> return False
+      Right _ -> return True
   where
     reqFile = testFileBase name <> ".req"
 

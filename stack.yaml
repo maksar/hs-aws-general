@@ -1,0 +1,5 @@
+resolver: lts-13.16
+packages:
+  - .
+extra-deps:
+  - aws-0.21.1@sha256:5290b819bd425f28c736b93a84955ced145bdb631a26d784d1b952e2e0ddc6b8
