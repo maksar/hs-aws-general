@@ -64,6 +64,7 @@ module Aws.General
 import Control.Applicative
 import Control.DeepSeq
 import Control.Monad
+import qualified Control.Monad.Fail as MF
 
 import Data.Aeson (ToJSON(..), FromJSON(..), withText)
 import qualified Data.Attoparsec.Text as AP
@@ -89,7 +90,7 @@ import Text.Printf
 
 class AwsType a where
     toText :: (IsString b, Monoid b) => a -> b
-    parse :: (Monad m,  P.CharParsing m) => m a
+    parse :: (MF.MonadFail m,  P.CharParsing m) => m a
 
     fromText :: T.Text -> Either String a
     fromText = AP.parseOnly $ parse <* P.eof

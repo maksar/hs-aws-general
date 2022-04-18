@@ -103,6 +103,7 @@ import Control.Applicative
 import Control.Arrow hiding (left)
 import Control.DeepSeq
 import Control.Monad.IO.Class
+import qualified Control.Monad.Fail as MF
 
 import Crypto.Hash
 
@@ -462,7 +463,7 @@ credentialScopeToText s =
     <> "/" <> toText (credentialScopeService s)
     <> "/" <> terminationString
 
-parseCredentialScope :: (Monad m, P.CharParsing m) => m CredentialScope
+parseCredentialScope :: (MF.MonadFail m, P.CharParsing m) => m CredentialScope
 parseCredentialScope = CredentialScope
     <$> time
     <*> (P.char '/' *> parseRegion)
@@ -472,7 +473,7 @@ parseCredentialScope = CredentialScope
     time = do
         str <- P.count 8 P.digit
         case p credentialScopeDateFormat str of
-            Nothing -> fail $ "failed to parse credential scope date: " <> str
+            Nothing -> MF.fail $ "failed to parse credential scope date: " <> str
             Just t -> return t
 #if MIN_VERSION_time(1,5,0)
     p = parseTimeM True defaultTimeLocale
